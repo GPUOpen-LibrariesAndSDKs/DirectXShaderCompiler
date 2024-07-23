@@ -287,6 +287,10 @@ LocationAndComponent getLocationAndComponentCount(const ASTContext &astContext,
             locComponentCount.component, locComponentCount.componentAlignment};
   }
 
+  if (hlsl::IsHLSLNodeType(type)) {
+    return {1, 1, false};
+  }
+
   // Struct type
   if (type->getAs<RecordType>()) {
     assert(false && "all structs should already be flattened");
@@ -451,6 +455,10 @@ hlsl::DxilParamInputQual deduceParamQual(const DeclaratorDecl *decl,
   if (decl->hasAttr<HLSLPayloadAttr>())
     return hlsl::DxilParamInputQual::InPayload;
 
+  if (hlsl::IsHLSLNodeType(type)) {
+    return hlsl::DxilParamInputQual::NodeIO;
+  }
+
   return asInput ? hlsl::DxilParamInputQual::In : hlsl::DxilParamInputQual::Out;
 }
 
@@ -459,6 +467,25 @@ hlsl::DxilParamInputQual deduceParamQual(const DeclaratorDecl *decl,
 const hlsl::SigPoint *deduceSigPoint(const DeclaratorDecl *decl, bool asInput,
                                      const hlsl::ShaderModel::Kind kind,
                                      bool forPCF) {
+  if (kind == hlsl::ShaderModel::Kind::Node) {
+    bool isFunDecl = isa<FunctionDecl>(decl);
+    if (auto *funDecl = isFunDecl ? dyn_cast<FunctionDecl>(decl)
+                                  : dyn_cast_or_null<FunctionDecl>(
+                                        decl->getParentFunctionOrMethod())) {
+      if (auto *nodeLaunchAttr = funDecl->getAttr<HLSLNodeLaunchAttr>()) {
+        if (nodeLaunchAttr->getLaunchType() == "mesh") {
+          if (asInput) {
+            return hlsl::SigPoint::GetSigPoint(hlsl::SigPoint::Kind::MSIn);
+          } else {
+              const bool isPrimOut = (deduceParamQual(decl, asInput) == hlsl::DxilParamInputQual::OutPrimitives);
+              return hlsl::SigPoint::GetSigPoint(isPrimOut ? hlsl::SigPoint::Kind::MSPOut
+                                                           : hlsl::SigPoint::Kind::MSOut);
+          }
+        }
+      }
+    }
+    return hlsl::SigPoint::GetSigPoint(hlsl::SigPoint::Kind::CSIn);
+  }
   return hlsl::SigPoint::GetSigPoint(hlsl::SigPointFromInputQual(
       deduceParamQual(decl, asInput), kind, forPCF));
 }
@@ -799,7 +826,7 @@ SemanticInfo DeclResultIdMapper::getStageVarSemantic(const NamedDecl *decl) {
 }
 
 bool DeclResultIdMapper::createStageOutputVar(const DeclaratorDecl *decl,
-                                              SpirvInstruction *storedValue,
+                                              SpirvInstruction **storedValue,
                                               bool forPCF) {
   QualType type = getTypeOrFnRetType(decl);
   uint32_t arraySize = 0;
@@ -878,19 +905,21 @@ bool DeclResultIdMapper::createStageOutputVar(const DeclaratorDecl *decl,
   // .Append() intrinsic method, implemented in writeBackOutputStream(). So
   // ignoreValue should be set to true for GS.
   const bool noWriteBack =
-      storedValue == nullptr || spvContext.isGS() || spvContext.isMS();
+      *storedValue == nullptr || spvContext.isGS() || spvContext.isMS() ||
+      sigPoint->GetKind() == hlsl::DXIL::SigPointKind::MSOut ||
+      sigPoint->GetKind() == hlsl::DXIL::SigPointKind::MSPOut; // mesh nodes
 
   StageVarDataBundle stageVarData = {
       decl, &inheritSemantic, false,     sigPoint,
       type, arraySize,        "out.var", llvm::None};
-  return createStageVars(stageVarData, /*asInput=*/false, &storedValue,
+  return createStageVars(stageVarData, /*asInput=*/false, storedValue,
                          noWriteBack);
 }
 
 bool DeclResultIdMapper::createStageOutputVar(const DeclaratorDecl *decl,
                                               uint32_t arraySize,
                                               SpirvInstruction *invocationId,
-                                              SpirvInstruction *storedValue) {
+                                              SpirvInstruction **storedValue) {
   assert(spvContext.isHS());
 
   QualType type = getTypeOrFnRetType(decl);
@@ -903,7 +932,7 @@ bool DeclResultIdMapper::createStageOutputVar(const DeclaratorDecl *decl,
   StageVarDataBundle stageVarData = {
       decl, &inheritSemantic, false,     sigPoint,
       type, arraySize,        "out.var", invocationId};
-  return createStageVars(stageVarData, /*asInput=*/false, &storedValue,
+  return createStageVars(stageVarData, /*asInput=*/false, storedValue,
                          /*noWriteBack=*/false);
 }
 
@@ -2085,6 +2114,8 @@ bool DeclResultIdMapper::assignLocations(
     llvm::DenseSet<StageVariableLocationInfo, StageVariableLocationInfo>
         *stageVariableLocationInfo) {
   for (const auto *var : vars) {
+    if (hlsl::IsHLSLNodeType(var->getAstType()))
+      continue;
     auto locCount = var->getLocationCount();
     uint32_t location = nextLocs(locCount);
     spvBuilder.decorateLocation(var->getSpirvInstr(), location);
@@ -3478,6 +3509,22 @@ bool DeclResultIdMapper::createStageVars(StageVarDataBundle &stageVarData,
     stageVarData.semantic = &thisSemantic;
   }
 
+  if (hlsl::IsHLSLNodeType(stageVarData.type)) {
+    // Hijack the notion of semantic to use createSpirvInterfaceVariable
+    StringRef str = stageVarData.decl->getName();
+    stageVarData.semantic->str = stageVarData.semantic->name = str;
+    stageVarData.semantic->semantic = hlsl::Semantic::GetArbitrary();
+    SpirvVariable *varInstr = createSpirvInterfaceVariable(stageVarData);
+    if (!varInstr) {
+      return false;
+    }
+
+    *value = hlsl::IsHLSLNodeInputType(stageVarData.type)
+                 ? varInstr
+                 : loadShaderInputVariable(varInstr, stageVarData);
+    return true;
+  }
+
   if (stageVarData.semantic->isValid() &&
       // Structs with attached semantics will be handled later.
       !stageVarData.type->isStructureType()) {
@@ -3918,6 +3965,8 @@ SpirvVariable *DeclResultIdMapper::getBuiltinVar(spv::BuiltIn builtIn,
   case spv::BuiltIn::GlobalInvocationId:
   case spv::BuiltIn::WorkgroupId:
   case spv::BuiltIn::LocalInvocationIndex:
+  case spv::BuiltIn::RemainingRecursionLevelsAMDX:
+  case spv::BuiltIn::ShaderIndexAMDX:
     sc = spv::StorageClass::Input;
     break;
   case spv::BuiltIn::TaskCountNV:
@@ -3948,7 +3997,9 @@ SpirvVariable *DeclResultIdMapper::createSpirvStageVar(
   const auto type = stageVar->getAstType();
   const auto isPrecise = decl->hasAttr<HLSLPreciseAttr>();
   auto isNointerp = decl->hasAttr<HLSLNoInterpolationAttr>();
-  spv::StorageClass sc = getStorageClassForSigPoint(sigPoint);
+  spv::StorageClass sc = hlsl::IsHLSLNodeInputType(stageVar->getAstType())
+                             ? spv::StorageClass::NodePayloadAMDX
+                             : getStorageClassForSigPoint(sigPoint);
   if (sc == spv::StorageClass::Max)
     return 0;
   stageVar->setStorageClass(sc);
@@ -4062,13 +4113,13 @@ SpirvVariable *DeclResultIdMapper::createSpirvStageVar(
     stageVar->setIsSpirvBuiltin();
     // Vulkan requires the DepthReplacing execution mode to write to FragDepth.
     spvBuilder.addExecutionMode(entryFunction,
-                                spv::ExecutionMode::DepthReplacing, {}, srcLoc);
+                                spv::ExecutionMode::DepthReplacing, srcLoc);
     if (semanticKind == hlsl::Semantic::Kind::DepthGreaterEqual)
       spvBuilder.addExecutionMode(entryFunction,
-                                  spv::ExecutionMode::DepthGreater, {}, srcLoc);
+                                  spv::ExecutionMode::DepthGreater, srcLoc);
     else if (semanticKind == hlsl::Semantic::Kind::DepthLessEqual)
       spvBuilder.addExecutionMode(entryFunction, spv::ExecutionMode::DepthLess,
-                                  {}, srcLoc);
+                                  srcLoc);
     return spvBuilder.addStageBuiltinVar(type, sc, BuiltIn::FragDepth,
                                          isPrecise, srcLoc);
   }

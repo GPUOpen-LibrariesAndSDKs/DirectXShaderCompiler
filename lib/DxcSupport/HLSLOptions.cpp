@@ -1160,7 +1160,9 @@ int ReadDxcOpts(const OptTable *optionTable, unsigned flagsToInclude,
   }
 
   opts.SpirvOptions.targetEnv =
-      Args.getLastArgValue(OPT_fspv_target_env_EQ, "vulkan1.0");
+      Major > 6 || Major == 6 && Minor > 7
+          ? Args.getLastArgValue(OPT_fspv_target_env_EQ, "vulkan1.3")
+          : Args.getLastArgValue(OPT_fspv_target_env_EQ, "vulkan1.0");
 
   // Handle -Oconfig=<comma-separated-list> option.
   uint32_t numOconfigs = 0;

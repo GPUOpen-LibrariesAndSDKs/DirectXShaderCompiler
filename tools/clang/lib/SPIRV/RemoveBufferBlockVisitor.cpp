@@ -39,6 +39,8 @@ bool RemoveBufferBlockVisitor::hasStorageBufferInterfaceType(
       type = elemType->getElementType();
     } else if (const auto *elemType = dyn_cast<RuntimeArrayType>(type)) {
       type = elemType->getElementType();
+    } else if (const auto *elemType = dyn_cast<NodePayloadArrayType>(type)) {
+      type = elemType->getElementType();
     } else {
       return false;
     }

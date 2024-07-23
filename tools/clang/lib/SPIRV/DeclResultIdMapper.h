@@ -215,11 +215,11 @@ public:
   /// Note that the control point stage output variable of HS should be created
   /// by the other overload.
   bool createStageOutputVar(const DeclaratorDecl *decl,
-                            SpirvInstruction *storedValue, bool forPCF);
+                            SpirvInstruction **storedValue, bool forPCF);
   /// \brief Overload for handling HS control point stage ouput variable.
   bool createStageOutputVar(const DeclaratorDecl *decl, uint32_t arraySize,
                             SpirvInstruction *invocationId,
-                            SpirvInstruction *storedValue);
+                            SpirvInstruction **storedValue);
 
   /// \brief Creates the stage input variables by parsing the semantics attached
   /// to the given function's parameter and returns true on success. SPIR-V

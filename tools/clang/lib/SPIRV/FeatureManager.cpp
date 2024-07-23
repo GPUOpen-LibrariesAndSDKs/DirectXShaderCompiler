@@ -194,6 +194,7 @@ Extension FeatureManager::getExtensionSymbol(llvm::StringRef name) {
       .Case("SPV_EXT_shader_image_int64", Extension::EXT_shader_image_int64)
       .Case("SPV_KHR_physical_storage_buffer",
             Extension::KHR_physical_storage_buffer)
+      .Case("SPV_AMDX_shader_enqueue", Extension::AMD_shader_enqueue)
       .Case("SPV_KHR_vulkan_memory_model", Extension::KHR_vulkan_memory_model)
       .Case("SPV_NV_compute_shader_derivatives",
             Extension::NV_compute_shader_derivatives)
@@ -256,6 +257,8 @@ const char *FeatureManager::getExtensionName(Extension symbol) {
     return "SPV_EXT_shader_image_int64";
   case Extension::KHR_physical_storage_buffer:
     return "SPV_KHR_physical_storage_buffer";
+  case Extension::AMD_shader_enqueue:
+    return "SPV_AMDX_shader_enqueue";
   case Extension::KHR_vulkan_memory_model:
     return "SPV_KHR_vulkan_memory_model";
   case Extension::NV_compute_shader_derivatives:

@@ -178,7 +178,6 @@ bool IsHLSLRWNodeInputRecordType(llvm::Type *Ty);
 bool IsHLSLNodeOutputRecordType(llvm::Type *Ty);
 bool IsHLSLGSNodeOutputRecordType(llvm::Type *Ty);
 bool IsHLSLNodeRecordType(llvm::Type *Ty);
-bool IsHLSLNodeInputOutputType(llvm::Type *Ty);
 
 llvm::Type *
 StripArrayTypes(llvm::Type *Ty,

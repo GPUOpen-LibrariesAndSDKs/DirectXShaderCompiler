@@ -56,6 +56,7 @@ enum class Extension {
   KHR_ray_query,
   EXT_shader_image_int64,
   KHR_physical_storage_buffer,
+  AMD_shader_enqueue,
   KHR_vulkan_memory_model,
   NV_compute_shader_derivatives,
   KHR_fragment_shader_barycentric,

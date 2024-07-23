@@ -309,6 +309,7 @@ DXIL::SigPointKind SigPoint::GetKind(DXIL::ShaderKind shaderKind,
     }
     break;
   case DXIL::ShaderKind::Compute:
+  case DXIL::ShaderKind::Node:
     switch (sigKind) {
     case DXIL::SignatureKind::Input:
       return DXIL::SigPointKind::CSIn;
@@ -317,8 +318,7 @@ DXIL::SigPointKind SigPoint::GetKind(DXIL::ShaderKind shaderKind,
     }
     break;
   case DXIL::ShaderKind::Mesh:
-  // Assuming mesh node
-  case DXIL::ShaderKind::Node:
+    // Assuming mesh node
     switch (sigKind) {
     case DXIL::SignatureKind::Input:
       return DXIL::SigPointKind::MSIn;

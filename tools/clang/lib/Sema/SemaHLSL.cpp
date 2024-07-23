@@ -312,8 +312,8 @@ enum ArBasicKind {
 #define BPROP_BITS64 0x00000006
 #define BPROP_BITS_NON_PRIM 0x00000007
 
-#define GET_BPROP_SUBTYPE(_Props) ((_Props)&BPROP_SUBTYPE_MASK)
-#define GET_BPROP_BITS(_Props) ((_Props)&BPROP_SUBTYPE_MASK)
+#define GET_BPROP_SUBTYPE(_Props) ((_Props) & BPROP_SUBTYPE_MASK)
+#define GET_BPROP_BITS(_Props) ((_Props) & BPROP_SUBTYPE_MASK)
 
 #define BPROP_BOOLEAN 0x00000010 // Whether the type is bool
 #define BPROP_INTEGER 0x00000020 // Whether the type is an integer
@@ -361,11 +361,11 @@ enum ArBasicKind {
 #define GET_BPROP_PRIM_KIND_SU(_Props)                                         \
   ((_Props) & (BPROP_BOOLEAN | BPROP_INTEGER | BPROP_FLOATING | BPROP_UNSIGNED))
 
-#define IS_BPROP_PRIMITIVE(_Props) (((_Props)&BPROP_PRIMITIVE) != 0)
+#define IS_BPROP_PRIMITIVE(_Props) (((_Props) & BPROP_PRIMITIVE) != 0)
 
-#define IS_BPROP_BOOL(_Props) (((_Props)&BPROP_BOOLEAN) != 0)
+#define IS_BPROP_BOOL(_Props) (((_Props) & BPROP_BOOLEAN) != 0)
 
-#define IS_BPROP_FLOAT(_Props) (((_Props)&BPROP_FLOATING) != 0)
+#define IS_BPROP_FLOAT(_Props) (((_Props) & BPROP_FLOATING) != 0)
 
 #define IS_BPROP_SINT(_Props)                                                  \
   (((_Props) & (BPROP_INTEGER | BPROP_UNSIGNED | BPROP_BOOLEAN)) ==            \
@@ -378,20 +378,20 @@ enum ArBasicKind {
 #define IS_BPROP_AINT(_Props)                                                  \
   (((_Props) & (BPROP_INTEGER | BPROP_BOOLEAN)) == BPROP_INTEGER)
 
-#define IS_BPROP_STREAM(_Props) (((_Props)&BPROP_STREAM) != 0)
+#define IS_BPROP_STREAM(_Props) (((_Props) & BPROP_STREAM) != 0)
 
-#define IS_BPROP_SAMPLER(_Props) (((_Props)&BPROP_SAMPLER) != 0)
+#define IS_BPROP_SAMPLER(_Props) (((_Props) & BPROP_SAMPLER) != 0)
 
-#define IS_BPROP_TEXTURE(_Props) (((_Props)&BPROP_TEXTURE) != 0)
+#define IS_BPROP_TEXTURE(_Props) (((_Props) & BPROP_TEXTURE) != 0)
 
-#define IS_BPROP_OBJECT(_Props) (((_Props)&BPROP_OBJECT) != 0)
+#define IS_BPROP_OBJECT(_Props) (((_Props) & BPROP_OBJECT) != 0)
 
-#define IS_BPROP_MIN_PRECISION(_Props) (((_Props)&BPROP_MIN_PRECISION) != 0)
+#define IS_BPROP_MIN_PRECISION(_Props) (((_Props) & BPROP_MIN_PRECISION) != 0)
 
 #define IS_BPROP_UNSIGNABLE(_Props)                                            \
   (IS_BPROP_AINT(_Props) && GET_BPROP_BITS(_Props) != BPROP_BITS12)
 
-#define IS_BPROP_ENUM(_Props) (((_Props)&BPROP_ENUM) != 0)
+#define IS_BPROP_ENUM(_Props) (((_Props) & BPROP_ENUM) != 0)
 
 #define IS_BPROP_WAVE_MATRIX_INPUT(_Props)                                     \
   (((_Props) & BPROP_WAVE_MATRIX_INPUT) != 0)
@@ -12960,6 +12960,17 @@ void ValidateDispatchGridValues(DiagnosticsEngine &Diags,
         << A.getName() << A.getRange();
 }
 
+void recordAttrArgs(Sema &S, const AttributeList &A, Attr *attr) {
+  auto *exprs = new (S.Context) SmallVector<const DeclRefExpr *, 4>();
+  for (unsigned i = 0; i < A.getNumArgs(); i++) {
+    DeclRefExpr *expr = nullptr;
+    exprs->push_back(
+        A.isArgExpr(i) ? dyn_cast_or_null<const DeclRefExpr>(A.getArgAsExpr(i))
+                       : nullptr);
+  }
+  S.Context.setAttrArgExprs(*exprs, attr);
+}
+
 void hlsl::HandleDeclAttributeForHLSL(Sema &S, Decl *D, const AttributeList &A,
                                       bool &Handled) {
   DXASSERT_NOMSG(D != nullptr);
@@ -13086,7 +13097,7 @@ void hlsl::HandleDeclAttributeForHLSL(Sema &S, Decl *D, const AttributeList &A,
     if (!declAttr) {
       return;
     }
-
+    recordAttrArgs(S, A, declAttr);
     break;
   case AttributeList::AT_HLSLMaxRecordsSharedWith: {
     declAttr = ValidateMaxRecordsSharedWithAttributes(S, D, A);
@@ -13113,6 +13124,7 @@ void hlsl::HandleDeclAttributeForHLSL(Sema &S, Decl *D, const AttributeList &A,
     declAttr = ::new (S.Context) HLSLNodeIdAttr(
         A.getRange(), S.Context, ValidateAttributeStringArg(S, A, nullptr, 0),
         ValidateAttributeIntArg(S, A, 1), A.getAttributeSpellingListIndex());
+    recordAttrArgs(S, A, declAttr);
     break;
   case AttributeList::AT_HLSLNodeTrackRWInputSharing:
     declAttr = ::new (S.Context) HLSLNodeTrackRWInputSharingAttr(
@@ -13219,6 +13231,7 @@ void hlsl::HandleDeclAttributeForHLSL(Sema &S, Decl *D, const AttributeList &A,
       auto numThreads = ::new (S.Context) HLSLNumThreadsAttr(
           A.getRange(), S.Context, X, Y, Z, A.getAttributeSpellingListIndex());
       declAttr = numThreads;
+      recordAttrArgs(S, A, declAttr);
     } else {
       // If the number of threads is invalid, diagnose and drop the attribute.
       S.Diags.Report(A.getLoc(), diag::warn_hlsl_numthreads_group_size)
@@ -13317,6 +13330,7 @@ void hlsl::HandleDeclAttributeForHLSL(Sema &S, Decl *D, const AttributeList &A,
     declAttr = ::new (S.Context) HLSLNodeShareInputOfAttr(
         A.getRange(), S.Context, ValidateAttributeStringArg(S, A, nullptr, 0),
         ValidateAttributeIntArg(S, A, 1), A.getAttributeSpellingListIndex());
+    recordAttrArgs(S, A, declAttr);
     break;
   case AttributeList::AT_HLSLNodeDispatchGrid:
     declAttr = ::new (S.Context) HLSLNodeDispatchGridAttr(
@@ -13324,6 +13338,7 @@ void hlsl::HandleDeclAttributeForHLSL(Sema &S, Decl *D, const AttributeList &A,
         ValidateAttributeIntArg(S, A, 1), ValidateAttributeIntArg(S, A, 2),
         A.getAttributeSpellingListIndex());
     ValidateDispatchGridValues(S.Diags, A, declAttr);
+    recordAttrArgs(S, A, declAttr);
     break;
   case AttributeList::AT_HLSLNodeMaxDispatchGrid:
     declAttr = ::new (S.Context) HLSLNodeMaxDispatchGridAttr(
@@ -13331,6 +13346,7 @@ void hlsl::HandleDeclAttributeForHLSL(Sema &S, Decl *D, const AttributeList &A,
         ValidateAttributeIntArg(S, A, 1), ValidateAttributeIntArg(S, A, 2),
         A.getAttributeSpellingListIndex());
     ValidateDispatchGridValues(S.Diags, A, declAttr);
+    recordAttrArgs(S, A, declAttr);
     break;
   case AttributeList::AT_HLSLNodeMaxRecursionDepth:
     declAttr = ::new (S.Context) HLSLNodeMaxRecursionDepthAttr(
@@ -13340,6 +13356,7 @@ void hlsl::HandleDeclAttributeForHLSL(Sema &S, Decl *D, const AttributeList &A,
       S.Diags.Report(declAttr->getLocation(),
                      diag::err_hlsl_maxrecursiondepth_exceeded)
           << declAttr->getRange();
+    recordAttrArgs(S, A, declAttr);
     break;
   case AttributeList::AT_HLSLNodeMaxInputRecordsPerGraphEntryRecord:
     declAttr = ::new (S.Context) HLSLNodeMaxInputRecordsPerGraphEntryRecordAttr(
